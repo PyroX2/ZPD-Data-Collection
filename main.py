@@ -4,7 +4,7 @@ import os
 folder = "dataset"
 os.makedirs(folder, exist_ok=True)
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 def get_saved_images():
     return [f for f in os.listdir(folder) if f.startswith("image_") and f.endswith(".jpg")]
