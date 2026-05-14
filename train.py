@@ -1,10 +1,12 @@
 import os
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torchvision.models import resnet18, ResNet18_Weights
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import v2
 from torch.utils.data import DataLoader
+from metrics import MulticlassMetricsCalculator
 from argparse import ArgumentParser
 from tqdm import tqdm
 
@@ -17,6 +19,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--n-workers", type=int, default=8, help="Number of workers")
+    parser.add_argument("--n-classes", type=int, default=7, help="Number of classes to train on.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--dataset-root", type=str, default="dataset", help="Path to your dataset root. Should contain folders with train, valid and test splits. ")
     parser.add_argument("--ckpt-path", type=str, default="checkpoints", help="Path to directory where model checkpoints will be saved to.")
@@ -25,6 +28,8 @@ def parse_args():
 @torch.no_grad()
 def validate(model, dataloader, criterion):
     total_loss = 0
+    metrics_calculator = MulticlassMetricsCalculator(args.n_classes, device=device)
+
     model.eval()
     for input, target in tqdm(dataloader):       
         input, target = input.to(device), target.to(device)
@@ -32,14 +37,21 @@ def validate(model, dataloader, criterion):
         loss = criterion(output, target)
         total_loss += loss.item()
 
+        probs = F.softmax(output, dim=-1)
+        metrics_calculator.update(probs.detach(), target.detach())
+
+    val_accuracy, val_f1_score, val_auprc, val_auroc, val_precision, val_recall, val_confusion_matrix = metrics_calculator.compute()
     mean_loss = total_loss / len(dataloader)
-    return mean_loss
+    return mean_loss, val_accuracy, val_f1_score, val_auprc, val_auroc, val_precision, val_recall, val_confusion_matrix
 
 def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs):
     best_val_loss = float("inf")
 
+    metrics_calculator = MulticlassMetricsCalculator(args.n_classes, device=device)
+
     for epoch in range(epochs):
         epoch_train_loss = 0
+
         model.train()
         for input, target in tqdm(train_dataloader):
             optimizer.zero_grad()
@@ -52,9 +64,15 @@ def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs)
             optimizer.step()
 
             epoch_train_loss += loss.item()
+            probs = F.softmax(output, dim=-1)
+            metrics_calculator.update(probs.detach(), target.detach())
+
+        train_accuracy, train_f1_score, train_auprc, train_auroc, train_precision, train_recall, train_confusion_matrix = metrics_calculator.compute()
+        print(f"Epoch: {epoch}, Train accuracy: {train_accuracy}, Train f1 score: {train_f1_score}, Train auprc: {train_auprc}, Train auroc: {train_auroc}, Train precision: {train_precision}, Train recall: {train_recall}")
 
         mean_epoch_loss = epoch_train_loss / len(train_dataloader)
-        mean_val_loss = validate(model, val_dataloader, criterion)
+        mean_val_loss, val_accuracy, val_f1_score, val_auprc, val_auroc, val_precision, val_recall, val_confusion_matrix = validate(model, val_dataloader, criterion)
+        print(f"Epoch: {epoch}, Val accuracy: {val_accuracy}, Val f1 score: {val_f1_score}, Val auprc: {val_auprc}, Val auroc: {val_auroc}, Val precision: {val_precision}, Val recall: {val_recall}")
 
         print(f"Epoch: {epoch}, Train loss: {mean_epoch_loss}, Val loss: {mean_val_loss}")
 
@@ -84,12 +102,10 @@ def main():
         v2.Resize((224, 224))
     ])
 
-    n_classes = len(os.listdir(os.path.join(args.dataset_root, "train")))
-
-    print(f"Training on {n_classes} classes")
+    print(f"Training on {args.n_classes} classes")
 
     model = resnet18(weights=ResNet18_Weights.DEFAULT)
-    model.fc = nn.Linear(model.fc.in_features, n_classes)
+    model.fc = nn.Linear(model.fc.in_features, args.n_classes)
     model.to(device)
 
     train_dataset = ImageFolder(os.path.join(args.dataset_root, "train"), transform=train_transforms)
