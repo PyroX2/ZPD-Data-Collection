@@ -11,6 +11,12 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 
 
+SEED = 0
+
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+torch.manual_seed(SEED)
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -41,6 +47,8 @@ def validate(model, dataloader, criterion):
         metrics_calculator.update(probs.detach(), target.detach())
 
     val_accuracy, val_f1_score, val_auprc, val_auroc, val_precision, val_recall, val_confusion_matrix = metrics_calculator.compute()
+    metrics_calculator.reset()
+
     mean_loss = total_loss / len(dataloader)
     return mean_loss, val_accuracy, val_f1_score, val_auprc, val_auroc, val_precision, val_recall, val_confusion_matrix
 
@@ -68,6 +76,7 @@ def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs)
             metrics_calculator.update(probs.detach(), target.detach())
 
         train_accuracy, train_f1_score, train_auprc, train_auroc, train_precision, train_recall, train_confusion_matrix = metrics_calculator.compute()
+        metrics_calculator.reset()
         print(f"Epoch: {epoch}, Train accuracy: {train_accuracy}, Train f1 score: {train_f1_score}, Train auprc: {train_auprc}, Train auroc: {train_auroc}, Train precision: {train_precision}, Train recall: {train_recall}")
 
         mean_epoch_loss = epoch_train_loss / len(train_dataloader)
