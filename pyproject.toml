@@ -19,6 +19,7 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "seaborn>=0.13.2",
     "statsmodels>=0.14.6",
+    "tensorboard>=2.20.0",
     "torch>=2.11.0",
     "torcheval>=0.0.7",
     "torchvision>=0.26.0",
