@@ -161,7 +161,33 @@ def main():
     train(model, train_dataloader, val_dataloader, criterion, optimizer, args.epochs, writer)
 
     print("Testing final model")
-    validate(model, test_dataloader, criterion)
+    
+    model.load_state_dict(torch.load(os.path.join(args.ckpt_path, "best.pt")))
+    
+    test_loss, test_accuracy, test_f1_score, test_auprc, test_auroc, test_precision, test_recall, test_confusion_matrix = validate(model, test_dataloader, criterion)
+    
+    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test Accuracy: {test_accuracy:.4f}")
+    print(f"Test F1 Score: {test_f1_score:.4f}")
+    print(f"Test AUPRC: {test_auprc:.4f}")
+    print(f"Test AUROC: {test_auroc:.4f}")
+    print(f"Test Precision: {test_precision:.4f}")
+    print(f"Test Recall: {test_recall:.4f}")
+
+    writer.add_scalar("Loss/Test", test_loss, args.epochs)
+    writer.add_scalar("Accuracy/Test", test_accuracy, args.epochs)
+    writer.add_scalar("F1_Score/Test", test_f1_score, args.epochs)
+    writer.add_scalar("AUPRC/Test", test_auprc, args.epochs)
+    writer.add_scalar("AUROC/Test", test_auroc, args.epochs)
+    writer.add_scalar("Precision/Test", test_precision, args.epochs)
+    writer.add_scalar("Recall/Test", test_recall, args.epochs)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(test_confusion_matrix.cpu().numpy(), annot=True, fmt='g', cmap="Blues", ax=ax)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
+    ax.set_title("Test Confusion Matrix")
+    writer.add_figure("Confusion_Matrix/Test", fig, args.epochs)
     
     writer.close()
 
