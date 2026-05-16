@@ -27,7 +27,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--n-workers", type=int, default=8, help="Number of workers")
     parser.add_argument("--n-classes", type=int, default=7, help="Number of classes to train on.")
