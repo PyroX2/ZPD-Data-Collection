@@ -42,6 +42,8 @@ def parse_args():
     parser.add_argument("--hard-example-batch-size", type=int, default=16, help="Batch size used only for hard-example retraining.")
     parser.add_argument("--hard-example-frequency", type=int, default=1, help="Run hard-example retraining every N epochs.")
     parser.add_argument("--hard-example-only-misclassified", action="store_true", help="Use only misclassified samples when building the hard-example set.")
+    parser.add_argument("--feature-extraction", action="store_true", help="Freze base ResNet layers for transfer learning.")
+    parser.add_argument("--use_scheduler", action="store_true", help="Use ReduceLROnPlateau learning rate scheduler.")
     return parser.parse_args()
 
 
@@ -143,7 +145,7 @@ def validate(model, dataloader, criterion):
     metrics_calculator = MulticlassMetricsCalculator(args.n_classes, device=device)
 
     model.eval()
-    for input, target, _ in tqdm(dataloader):       
+    for input, target, _ in tqdm(dataloader):
         input, target = input.to(device), target.to(device)
         output = model(input)
         loss = criterion(output, target)
@@ -158,7 +160,7 @@ def validate(model, dataloader, criterion):
     mean_loss = total_loss / len(dataloader)
     return mean_loss, val_accuracy, val_f1_score, val_auprc, val_auroc, val_precision, val_recall, val_confusion_matrix
 
-def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs, writer, train_transform):
+def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs, writer, train_transform, scheduler=None):
     best_val_loss = float("inf")
 
     metrics_calculator = MulticlassMetricsCalculator(args.n_classes, device=device)
@@ -220,6 +222,10 @@ def train(model, train_dataloader, val_dataloader, criterion, optimizer, epochs,
             writer.add_figure("Confusion_Matrix/Val_Best", fig, epoch)
 
         torch.save(model.state_dict(), os.path.join(args.ckpt_path, "last.pt"))
+        if scheduler is not None:
+            scheduler.step(mean_val_loss)
+            current_lr = optimizer.param_groups[0]['lr']
+            writer.add_scalar("Learning_Rate", current_lr, epoch)
 
         if args.enable_hard_example_retraining and args.hard_example_frequency > 0 and (epoch + 1) % args.hard_example_frequency == 0:
             hard_example_criterion = nn.CrossEntropyLoss(reduction="none")
@@ -270,6 +276,11 @@ def main():
     print(f"Training on {args.n_classes} classes")
 
     model = resnet18(weights=ResNet18_Weights.DEFAULT)
+
+    if args.feature_extraction:
+        print("Freezing base layers")
+        for param in model.parameters():
+            param.requires_grad = False
     model.fc = nn.Linear(model.fc.in_features, args.n_classes)
     model.to(device)
 
@@ -282,9 +293,15 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.n_workers)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    params_to_update = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(params_to_update, lr=args.lr)
 
-    train(model, train_dataloader, val_dataloader, criterion, optimizer, args.epochs, writer, train_transforms)
+    scheduler = None
+    if args.use_scheduler:
+        print("LR Scheduler enabled")
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
+
+    train(model, train_dataloader, val_dataloader, criterion, optimizer, args.epochs, writer, train_transforms, scheduler=scheduler)
 
     print("Testing final model")
     
